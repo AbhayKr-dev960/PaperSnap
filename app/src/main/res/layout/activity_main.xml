@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#F7F7F5"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="P A P E R S N A P"
+            android:textColor="#777771"
+            android:textSize="12sp"
+            android:paddingTop="12dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Your documents,\nbeautifully clear."
+            android:textColor="#171717"
+            android:textSize="32sp"
+            android:textStyle="bold"
+            android:lineSpacingExtra="3dp"
+            android:paddingTop="24dp"
+            android:paddingBottom="12dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Scan pages. Refine the image. Save as PDF."
+            android:textColor="#777771"
+            android:textSize="15sp"
+            android:paddingBottom="28dp" />
+
+        <Button
+            android:id="@+id/scanButton"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:text="＋   Scan a document"
+            android:textAllCaps="false"
+            android:textSize="16sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="YOUR WORKFLOW"
+            android:textColor="#777771"
+            android:textSize="11sp"
+            android:letterSpacing="0.1"
+            android:paddingTop="32dp"
+            android:paddingBottom="12dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="01   Capture your pages"
+            android:textColor="#171717"
+            android:textSize="16sp"
+            android:padding="16dp"
+            android:background="#FFFFFF" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="02   Refine in the editor"
+            android:textColor="#171717"
+            android:textSize="16sp"
+            android:padding="16dp"
+            android:layout_marginTop="6dp"
+            android:background="#FFFFFF" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="03   Export your document"
+            android:textColor="#171717"
+            android:textSize="16sp"
+            android:padding="16dp"
+            android:layout_marginTop="6dp"
+            android:background="#FFFFFF" />
+
+        <Button
+            android:id="@+id/savePdfButton"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="28dp"
+            android:text="Save original scanned PDF"
+            android:textAllCaps="false" />
+
+        <Button
+            android:id="@+id/sharePdfButton"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:text="Share original scanned PDF"
+            android:textAllCaps="false" />
+
+        <TextView
+            android:id="@+id/statusText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Ready when you are."
+            android:textColor="#777771"
+            android:textSize="13sp"
+            android:paddingTop="16dp" />
+
+    </LinearLayout>
+</ScrollView>

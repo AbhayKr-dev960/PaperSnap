@@ -2,11 +2,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <application
+        android:icon="@drawable/logo"
         android:allowBackup="true"
-        android:label="Java App"
+        android:label="PaperSnap"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
-
+        
+        <!-- Main screen -->
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -17,5 +19,12 @@
             </intent-filter>
 
         </activity>
+
+        <!-- Custom document editor -->
+        <activity
+            android:name=".EditorActivity"
+            android:exported="false" />
+
     </application>
+
 </manifest>
