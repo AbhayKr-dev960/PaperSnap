@@ -8,6 +8,7 @@ final class AppSettings {
     static final String EDIT_AFTER_SCAN = "edit_after_scan";
     static final String AUTO_CROP = "auto_crop";
     static final String HIGH_QUALITY = "high_quality";
+    static final String BUILTIN_CAMERA = "builtin_camera";
 
     private AppSettings() {
     }
@@ -24,6 +25,11 @@ final class AppSettings {
     /** Find the page edges and straighten it automatically. On by default. */
     static boolean autoCrop(Context c) {
         return prefs(c).getBoolean(AUTO_CROP, true);
+    }
+
+    /** Use PaperSnap's own camera with the live page outline (otherwise the phone's camera app). */
+    static boolean builtinCamera(Context c) {
+        return prefs(c).getBoolean(BUILTIN_CAMERA, true);
     }
 
     static int jpegQuality(Context c) {

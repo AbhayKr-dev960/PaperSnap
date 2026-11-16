@@ -29,6 +29,44 @@
             android:textColor="@color/ink"
             android:textSize="34sp" />
 
+        <!-- Built-in camera -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_rule"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingBottom="16dp"
+            android:paddingLeft="4dp"
+            android:paddingTop="16dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    style="@style/Body"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="PaperSnap camera"
+                    android:textSize="18sp" />
+
+                <TextView
+                    style="@style/Faint"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Shows a live outline of the page. Turn off to use your phone's camera app instead."
+                    android:textStyle="italic" />
+            </LinearLayout>
+
+            <Switch
+                android:id="@+id/switchCamera"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content" />
+        </LinearLayout>
+
         <!-- Auto crop -->
         <LinearLayout
             android:layout_width="match_parent"

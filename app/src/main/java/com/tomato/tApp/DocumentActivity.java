@@ -1,8 +1,10 @@
 package com.tomato.tApp;
 
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -33,7 +35,7 @@ import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** The current document: a list of pages you can add to, reorder, edit and export as one PDF. */
+/** The current document: a list of pages you can add to, preview, reorder, edit and export as one PDF. */
 public class DocumentActivity extends PaperActivity {
 
     static final String EXTRA_ACTION = "action";
@@ -43,17 +45,19 @@ public class DocumentActivity extends PaperActivity {
     private ListView list;
     private TextView status;
     private TextView empty;
-    private TextView count;
     private PageAdapter adapter;
 
     private List<String> ids = new ArrayList<>();
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final ExecutorService thumbs = Executors.newFixedThreadPool(2);
+    private final ExecutorService previewPool = Executors.newSingleThreadExecutor();
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final LruCache<String, Bitmap> cache = new LruCache<>(48);
+    private final LruCache<String, Bitmap> previewCache = new LruCache<>(6);
     private final ArrayDeque<String> editQueue = new ArrayDeque<>();
     private String pendingId;
 
+    private ActivityResultLauncher<Intent> cameraLauncher;
     private ActivityResultLauncher<Uri> captureLauncher;
     private ActivityResultLauncher<String> importLauncher;
     private ActivityResultLauncher<String> savePdfLauncher;
@@ -68,13 +72,21 @@ public class DocumentActivity extends PaperActivity {
         list = findViewById(R.id.pageList);
         status = findViewById(R.id.statusText);
         empty = findViewById(R.id.emptyText);
-        count = findViewById(R.id.countText);
         adapter = new PageAdapter();
         list.setAdapter(adapter);
 
         if (savedInstanceState != null) pendingId = savedInstanceState.getString("pendingId");
 
-        // Opens the phone's own camera app; the photo comes back at full resolution.
+        // PaperSnap's own camera (live page outline). Returns the pages it captured.
+        cameraLauncher = registerForActivityResult(
+                new ActivityResultContracts.StartActivityForResult(), r -> {
+                    Intent data = r.getData();
+                    if (r.getResultCode() != RESULT_OK || data == null) return;
+                    ArrayList<String> got = data.getStringArrayListExtra(CameraActivity.RESULT_IDS);
+                    if (got != null && !got.isEmpty()) process(got, null);
+                });
+
+        // Fallback: the phone's own camera app (if turned on in Settings).
         captureLauncher = registerForActivityResult(
                 new ActivityResultContracts.TakePicture(), ok -> {
                     String id = pendingId;
@@ -117,6 +129,7 @@ public class DocumentActivity extends PaperActivity {
         findViewById(R.id.clearButton).setOnClickListener(v -> confirmClear());
         findViewById(R.id.scanButton).setOnClickListener(v -> scanPage());
         findViewById(R.id.importButton).setOnClickListener(v -> importLauncher.launch("image/*"));
+        findViewById(R.id.previewCard).setOnClickListener(v -> openPreview(0));
         findViewById(R.id.saveButton).setOnClickListener(v -> {
             if (ids.isEmpty()) {
                 toast("Add a page first.");
@@ -153,6 +166,7 @@ public class DocumentActivity extends PaperActivity {
         super.onDestroy();
         worker.shutdown();
         thumbs.shutdownNow();
+        previewPool.shutdownNow();
     }
 
     // ------------------------------------------------------------------ pages
@@ -161,18 +175,48 @@ public class DocumentActivity extends PaperActivity {
         ids = PageStore.ids(this);
         adapter.notifyDataSetChanged();
         int n = ids.size();
-        count.setText(n == 0 ? "" : n + (n == 1 ? " page" : " pages"));
         empty.setVisibility(n == 0 ? View.VISIBLE : View.GONE);
         findViewById(R.id.clearButton).setVisibility(n == 0 ? View.INVISIBLE : View.VISIBLE);
         findViewById(R.id.saveButton).setEnabled(n > 0);
         findViewById(R.id.shareButton).setEnabled(n > 0);
+
+        View card = findViewById(R.id.previewCard);
+        card.setVisibility(n == 0 ? View.GONE : View.VISIBLE);
+        if (n > 0) {
+            ((TextView) findViewById(R.id.previewSub)).setText(
+                    n + (n == 1 ? " page" : " pages") + "  ·  tap to open");
+            loadThumb(PageStore.current(this, ids.get(0)), findViewById(R.id.previewThumb));
+        }
     }
 
     private void setStatus(String s) {
         status.setText(s);
     }
 
+    private void loadThumb(File f, ImageView iv) {
+        final String key = f.getAbsolutePath() + f.lastModified();
+        iv.setTag(key);
+        Bitmap cached = cache.get(key);
+        if (cached != null) {
+            iv.setImageBitmap(cached);
+            return;
+        }
+        iv.setImageDrawable(null);
+        thumbs.execute(() -> {
+            Bitmap t = ImageUtil.decodeFile(f, 240);
+            if (t == null) return;
+            cache.put(key, t);
+            ui.post(() -> {
+                if (key.equals(iv.getTag())) iv.setImageBitmap(t);
+            });
+        });
+    }
+
     private void scanPage() {
+        if (AppSettings.builtinCamera(this)) {
+            cameraLauncher.launch(new Intent(this, CameraActivity.class));
+            return;
+        }
         try {
             String id = PageStore.newId();
             File f = PageStore.orig(this, id);
@@ -245,26 +289,30 @@ public class DocumentActivity extends PaperActivity {
     private void showOptions(int pos) {
         if (pos < 0 || pos >= ids.size()) return;
         final String id = ids.get(pos);
-        String[] items = {"Adjust crop", "Edit — filters & rotate", "Move up", "Move down", "Delete"};
+        String[] items = {"Preview", "Adjust crop", "Edit — filters & rotate",
+                "Move up", "Move down", "Delete"};
         new AlertDialog.Builder(this)
                 .setTitle("Page " + (pos + 1))
                 .setItems(items, (d, which) -> {
                     switch (which) {
                         case 0:
-                            cropLauncher.launch(new Intent(this, CropActivity.class).putExtra("id", id));
+                            openPreview(pos);
                             break;
                         case 1:
-                            editLauncher.launch(new Intent(this, EditorActivity.class).putExtra("id", id));
+                            cropLauncher.launch(new Intent(this, CropActivity.class).putExtra("id", id));
                             break;
                         case 2:
+                            editLauncher.launch(new Intent(this, EditorActivity.class).putExtra("id", id));
+                            break;
+                        case 3:
                             PageStore.move(this, pos, pos - 1);
                             reload();
                             break;
-                        case 3:
+                        case 4:
                             PageStore.move(this, pos, pos + 1);
                             reload();
                             break;
-                        case 4:
+                        case 5:
                             PageStore.remove(this, id);
                             reload();
                             break;
@@ -279,11 +327,44 @@ public class DocumentActivity extends PaperActivity {
                 .setPositiveButton("Remove all", (d, w) -> {
                     PageStore.clear(this);
                     cache.evictAll();
+                    previewCache.evictAll();
                     reload();
                     setStatus("");
                 })
                 .setNegativeButton("Keep", null)
                 .show();
+    }
+
+    // ---------------------------------------------------------------- preview
+
+    /** Full-screen popup showing every page exactly as it will appear in the PDF. */
+    @SuppressWarnings("deprecation")
+    private void openPreview(int start) {
+        if (ids.isEmpty()) return;
+        final List<File> files = pageFiles();
+
+        Dialog d = new Dialog(this, R.style.PreviewDialog);
+        d.setContentView(R.layout.dialog_preview);
+        if (d.getWindow() != null) {
+            d.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT);
+        }
+
+        View root = d.findViewById(R.id.previewRoot);
+        root.setOnApplyWindowInsetsListener((v, insets) -> {
+            v.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),
+                    insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
+            return insets;
+        });
+
+        int n = files.size();
+        ((TextView) d.findViewById(R.id.previewTitle))
+                .setText("Preview  ·  " + n + (n == 1 ? " page" : " pages"));
+        ListView pv = d.findViewById(R.id.previewList);
+        pv.setAdapter(new PreviewAdapter(files));
+        pv.setSelection(Math.max(0, Math.min(start, n - 1)));
+        d.findViewById(R.id.closeButton).setOnClickListener(v -> d.dismiss());
+        d.show();
     }
 
     // -------------------------------------------------------------------- pdf
@@ -345,7 +426,7 @@ public class DocumentActivity extends PaperActivity {
         });
     }
 
-    // ---------------------------------------------------------------- adapter
+    // ---------------------------------------------------------------- adapters
 
     private class PageAdapter extends BaseAdapter {
         @Override
@@ -368,22 +449,65 @@ public class DocumentActivity extends PaperActivity {
             View v = convertView != null ? convertView
                     : getLayoutInflater().inflate(R.layout.item_page, parent, false);
             String id = ids.get(position);
-            File f = PageStore.current(DocumentActivity.this, id);
-
             ((TextView) v.findViewById(R.id.pageTitle)).setText("Page " + (position + 1));
+            loadThumb(PageStore.current(DocumentActivity.this, id), v.findViewById(R.id.pageThumb));
+            return v;
+        }
+    }
 
-            ImageView iv = v.findViewById(R.id.pageThumb);
+    private class PreviewAdapter extends BaseAdapter {
+        private final List<File> files;
+
+        PreviewAdapter(List<File> files) {
+            this.files = files;
+        }
+
+        @Override
+        public int getCount() {
+            return files.size();
+        }
+
+        @Override
+        public Object getItem(int position) {
+            return files.get(position);
+        }
+
+        @Override
+        public long getItemId(int position) {
+            return position;
+        }
+
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            View v = convertView != null ? convertView
+                    : getLayoutInflater().inflate(R.layout.item_preview, parent, false);
+            ImageView iv = v.findViewById(R.id.previewImage);
+            ((TextView) v.findViewById(R.id.previewCaption))
+                    .setText((position + 1) + " / " + files.size());
+
+            File f = files.get(position);
+
+            // Reserve the right height up front so the list doesn't jump while pages load.
+            BitmapFactory.Options o = new BitmapFactory.Options();
+            o.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(f.getAbsolutePath(), o);
+            int w = parent.getWidth() - parent.getPaddingLeft() - parent.getPaddingRight();
+            if (w <= 0) w = getResources().getDisplayMetrics().widthPixels;
+            ViewGroup.LayoutParams lp = iv.getLayoutParams();
+            lp.height = o.outWidth > 0 ? Math.round(w * (float) o.outHeight / o.outWidth) : w;
+            iv.setLayoutParams(lp);
+
             final String key = f.getAbsolutePath() + f.lastModified();
             iv.setTag(key);
-            Bitmap cached = cache.get(key);
+            Bitmap cached = previewCache.get(key);
             if (cached != null) {
                 iv.setImageBitmap(cached);
             } else {
                 iv.setImageDrawable(null);
-                thumbs.execute(() -> {
-                    Bitmap t = ImageUtil.decodeFile(f, 240);
+                previewPool.execute(() -> {
+                    Bitmap t = ImageUtil.decodeFile(f, 1400);
                     if (t == null) return;
-                    cache.put(key, t);
+                    previewCache.put(key, t);
                     ui.post(() -> {
                         if (key.equals(iv.getTag())) iv.setImageBitmap(t);
                     });

@@ -12,6 +12,7 @@ public class SettingsActivity extends PaperActivity {
         setContentView(R.layout.activity_settings);
 
         findViewById(R.id.backButton).setOnClickListener(v -> finish());
+        bind(R.id.switchCamera, AppSettings.BUILTIN_CAMERA, AppSettings.builtinCamera(this));
         bind(R.id.switchAutoCrop, AppSettings.AUTO_CROP, AppSettings.autoCrop(this));
         bind(R.id.switchEdit, AppSettings.EDIT_AFTER_SCAN, AppSettings.editAfterScan(this));
         bind(R.id.switchQuality, AppSettings.HIGH_QUALITY,

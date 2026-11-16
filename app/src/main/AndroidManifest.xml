@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- No CAMERA permission needed: photos are taken by the phone's own camera app. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+
     <queries>
         <intent>
             <action android:name="android.media.action.IMAGE_CAPTURE" />
@@ -26,6 +30,11 @@
         </activity>
 
         <activity android:name=".DocumentActivity" android:exported="false" />
+        <activity
+            android:name=".CameraActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.Paper.Camera" />
         <activity android:name=".CropActivity" android:exported="false" />
         <activity android:name=".EditorActivity" android:exported="false" />
         <activity android:name=".SettingsActivity" android:exported="false" />
