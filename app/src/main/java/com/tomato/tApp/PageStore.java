@@ -84,6 +84,10 @@ final class PageStore {
         put(c, list);
     }
 
+    static synchronized void setOrder(Context c, List<String> order) {
+        put(c, new ArrayList<>(order));
+    }
+
     static synchronized void remove(Context c, String id) {
         List<String> list = ids(c);
         list.remove(id);

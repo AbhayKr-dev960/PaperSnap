@@ -10,6 +10,7 @@ import org.opencv.core.MatOfInt;
 import org.opencv.core.MatOfPoint;
 import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.Point;
+import org.opencv.core.RotatedRect;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 
@@ -30,11 +31,21 @@ final class Scanner {
 
     private static boolean ready;
 
+    /** Last detection problem (shown in the camera so failures are never silent). */
+    static volatile String lastError;
+
     private Scanner() {
     }
 
     private static synchronized boolean init() {
-        if (!ready) ready = OpenCVLoader.initLocal();
+        if (!ready) {
+            try {
+                ready = OpenCVLoader.initLocal();
+            } catch (Throwable t) {
+                ready = false;
+            }
+            if (!ready) lastError = "OpenCV could not load";
+        }
         return ready;
     }
 
@@ -88,27 +99,52 @@ final class Scanner {
             int w = blur.cols();
             int h = blur.rows();
             double med = median(blur);
+            double otsu = otsuLevel(blur);
 
             Cand best = null;
+            // 1) edge based
             best = pick(best, fromCanny(blur, Math.max(10, 0.66 * med), Math.max(30, 1.33 * med), w, h));
             best = pick(best, fromCanny(blur, Math.max(8, 0.33 * med), Math.max(25, 0.66 * med), w, h));
             best = pick(best, fromCanny(blur, 30, 90, w, h));
-            best = pick(best, fromOtsu(blur, w, h));
-            if (best == null) return null;
+            // 2) brightness based: a white page is usually brighter than what's under it
+            for (double f : new double[]{0.85, 1.0, 1.15}) {
+                best = pick(best, fromThreshold(blur, otsu * f, false, w, h));
+            }
+            best = pick(best, fromThreshold(blur, otsu, true, w, h));
+
+            if (best == null) {
+                lastError = null; // working fine, just no page in view
+                return null;
+            }
 
             float[] q = new float[8];
             for (int i = 0; i < 4; i++) {
-                q[2 * i] = (float) (best.pts[i].x / w);
-                q[2 * i + 1] = (float) (best.pts[i].y / h);
+                q[2 * i] = clamp01((float) (best.pts[i].x / w));
+                q[2 * i + 1] = clamp01((float) (best.pts[i].y / h));
             }
+            lastError = null;
             return q;
         } catch (Throwable t) {
+            lastError = t.getClass().getSimpleName() + ": " + t.getMessage();
             return null;
         } finally {
             gray.release();
             clean.release();
             blur.release();
             if (k9 != null) k9.release();
+        }
+    }
+
+    private static float clamp01(float v) {
+        return Math.max(0f, Math.min(1f, v));
+    }
+
+    private static double otsuLevel(Mat blur) {
+        Mat tmp = new Mat();
+        try {
+            return Imgproc.threshold(blur, tmp, 0, 255, Imgproc.THRESH_BINARY | Imgproc.THRESH_OTSU);
+        } finally {
+            tmp.release();
         }
     }
 
@@ -148,11 +184,12 @@ final class Scanner {
         }
     }
 
-    private static Cand fromOtsu(Mat blur, int w, int h) {
+    private static Cand fromThreshold(Mat blur, double level, boolean inverse, int w, int h) {
         Mat bw = new Mat();
         Mat k7 = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(7, 7));
         try {
-            Imgproc.threshold(blur, bw, 0, 255, Imgproc.THRESH_BINARY | Imgproc.THRESH_OTSU);
+            Imgproc.threshold(blur, bw, level, 255,
+                    inverse ? Imgproc.THRESH_BINARY_INV : Imgproc.THRESH_BINARY);
             Imgproc.morphologyEx(bw, bw, Imgproc.MORPH_CLOSE, k7);
             Imgproc.morphologyEx(bw, bw, Imgproc.MORPH_OPEN, k7);
             return bestFromBinary(bw, w, h);
@@ -183,7 +220,7 @@ final class Scanner {
     private static Cand evaluate(MatOfPoint contour, int w, int h) {
         double imgArea = (double) w * h;
         double area = Imgproc.contourArea(contour);
-        if (area < imgArea * 0.12) return null;
+        if (area < imgArea * 0.08) return null;
 
         MatOfInt hullIdx = new MatOfInt();
         MatOfPoint2f hull2f = null;
@@ -195,6 +232,7 @@ final class Scanner {
             for (int i = 0; i < idx.length; i++) hp[i] = pts[idx[i]];
             hull2f = new MatOfPoint2f(hp);
 
+            // Best case: the outline really is a four-cornered shape.
             double peri = Imgproc.arcLength(hull2f, true);
             Point[] quad = null;
             for (double eps : new double[]{0.02, 0.03, 0.045, 0.06, 0.08}) {
@@ -205,16 +243,26 @@ final class Scanner {
                 ap.release();
                 if (four) break;
             }
-            if (quad == null) return null;
+            if (quad != null) {
+                quad = order(quad);
+                if (anglesOk(quad)) {
+                    double quadArea = polygonArea(quad);
+                    if (quadArea >= imgArea * 0.08 && quadArea <= imgArea * 0.985) {
+                        double fit = Math.min(1.0, area / quadArea);
+                        return new Cand(quad, (quadArea / imgArea) * fit);
+                    }
+                }
+            }
 
-            quad = order(quad);
-            if (!anglesOk(quad)) return null;
-
-            double quadArea = polygonArea(quad);
-            if (quadArea < imgArea * 0.12 || quadArea > imgArea * 0.98) return null;
-
-            double fit = Math.min(1.0, area / quadArea);
-            return new Cand(quad, (quadArea / imgArea) * fit);
+            // Otherwise: a tilted rectangle around the blob, if the blob is roughly rectangular.
+            RotatedRect rr = Imgproc.minAreaRect(hull2f);
+            double rectArea = rr.size.width * rr.size.height;
+            if (rectArea < imgArea * 0.08 || rectArea > imgArea * 0.985) return null;
+            double fit = Imgproc.contourArea(hull2f) / rectArea;
+            if (fit < 0.8) return null;
+            Point[] corners = new Point[4];
+            rr.points(corners);
+            return new Cand(order(corners), (rectArea / imgArea) * Math.min(1.0, fit) * 0.7);
         } finally {
             hullIdx.release();
             if (hull2f != null) hull2f.release();
@@ -231,7 +279,7 @@ final class Scanner {
             double cos = (v1x * v2x + v1y * v2y)
                     / (Math.hypot(v1x, v1y) * Math.hypot(v2x, v2y) + 1e-9);
             double ang = Math.toDegrees(Math.acos(Math.max(-1, Math.min(1, cos))));
-            if (ang < 55 || ang > 125) return false;
+            if (ang < 50 || ang > 130) return false;
         }
         return true;
     }

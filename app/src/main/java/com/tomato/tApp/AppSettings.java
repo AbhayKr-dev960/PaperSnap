@@ -32,6 +32,18 @@ final class AppSettings {
         return prefs(c).getBoolean(BUILTIN_CAMERA, true);
     }
 
+    static final int FLASH_OFF = 0;
+    static final int FLASH_ON = 1;
+    static final int FLASH_STAY_ON = 2;
+
+    static int flashMode(Context c) {
+        return prefs(c).getInt("flash_mode", FLASH_OFF);
+    }
+
+    static void setFlashMode(Context c, int mode) {
+        prefs(c).edit().putInt("flash_mode", mode).apply();
+    }
+
     static int jpegQuality(Context c) {
         return prefs(c).getBoolean(HIGH_QUALITY, true) ? 95 : 82;
     }

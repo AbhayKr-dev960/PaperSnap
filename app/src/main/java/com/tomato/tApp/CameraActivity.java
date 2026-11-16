@@ -9,7 +9,10 @@ import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Size;
 import android.view.MotionEvent;
+import android.graphics.Bitmap;
+import android.graphics.Color;
 import android.view.View;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.activity.OnBackPressedCallback;
@@ -56,17 +59,21 @@ public class CameraActivity extends PaperActivity {
     private PreviewView previewView;
     private ScanOverlayView overlay;
     private TextView hint;
-    private TextView countText;
-    private TextView flashButton;
+    private ImageView lastThumb;
+    private TextView badge;
+    private TextView doneButton;
+    private View flashRow;
+    private final TextView[] flashOptions = new TextView[3];
+    private int flashMode = AppSettings.FLASH_OFF;
     private View shutter;
     private View shutterFlash;
 
     private ImageCapture imageCapture;
     private Camera camera;
-    private boolean flashOn = false;
     private boolean capturing = false;
 
     private final ExecutorService analysisExecutor = Executors.newSingleThreadExecutor();
+    private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final ArrayList<String> captured = new ArrayList<>();
 
@@ -85,8 +92,13 @@ public class CameraActivity extends PaperActivity {
         previewView = findViewById(R.id.previewView);
         overlay = findViewById(R.id.overlay);
         hint = findViewById(R.id.hintText);
-        countText = findViewById(R.id.countText);
-        flashButton = findViewById(R.id.flashButton);
+        lastThumb = findViewById(R.id.lastThumb);
+        badge = findViewById(R.id.badge);
+        doneButton = findViewById(R.id.doneButton);
+        flashRow = findViewById(R.id.flashRow);
+        flashOptions[0] = findViewById(R.id.flashOff);
+        flashOptions[1] = findViewById(R.id.flashOn);
+        flashOptions[2] = findViewById(R.id.flashStay);
         shutter = findViewById(R.id.shutterButton);
         shutterFlash = findViewById(R.id.shutterFlash);
 
@@ -95,6 +107,14 @@ public class CameraActivity extends PaperActivity {
             if (saved != null) captured.addAll(saved);
         }
         updateCount();
+        if (!captured.isEmpty()) showThumb(captured.get(captured.size() - 1));
+
+        flashMode = AppSettings.flashMode(this);
+        for (int i = 0; i < 3; i++) {
+            final int mode = i;
+            flashOptions[i].setOnClickListener(v -> setFlash(mode));
+        }
+        styleFlashOptions();
 
         permissionLauncher = registerForActivityResult(
                 new ActivityResultContracts.RequestPermission(), granted -> {
@@ -108,14 +128,9 @@ public class CameraActivity extends PaperActivity {
                 });
 
         shutter.setOnClickListener(v -> capture());
-        findViewById(R.id.doneButton).setOnClickListener(v -> finishWithResult());
-        flashButton.setOnClickListener(v -> {
-            flashOn = !flashOn;
-            flashButton.setText(flashOn ? "flash on" : "flash off");
-            if (imageCapture != null) {
-                imageCapture.setFlashMode(flashOn
-                        ? ImageCapture.FLASH_MODE_ON : ImageCapture.FLASH_MODE_OFF);
-            }
+        doneButton.setOnClickListener(v -> finishWithResult());
+        findViewById(R.id.thumbFrame).setOnClickListener(v -> {
+            if (!captured.isEmpty()) finishWithResult();
         });
 
         // Tap the picture to focus there.
@@ -155,6 +170,7 @@ public class CameraActivity extends PaperActivity {
     protected void onDestroy() {
         super.onDestroy();
         analysisExecutor.shutdown();
+        ioExecutor.shutdown();
     }
 
     // ---------------------------------------------------------------- camera
@@ -178,7 +194,6 @@ public class CameraActivity extends PaperActivity {
 
         imageCapture = new ImageCapture.Builder()
                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
-                .setFlashMode(flashOn ? ImageCapture.FLASH_MODE_ON : ImageCapture.FLASH_MODE_OFF)
                 .build();
 
         ImageAnalysis analysis = new ImageAnalysis.Builder()
@@ -201,6 +216,37 @@ public class CameraActivity extends PaperActivity {
 
         provider.unbindAll();
         camera = provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, group.build());
+
+        flashRow.setVisibility(camera.getCameraInfo().hasFlashUnit() ? View.VISIBLE : View.GONE);
+        applyFlash();
+    }
+
+    // ----------------------------------------------------------------- flash
+
+    private void setFlash(int mode) {
+        flashMode = mode;
+        AppSettings.setFlashMode(this, mode);
+        styleFlashOptions();
+        applyFlash();
+    }
+
+    /** Off / On (fires when the photo is taken) / Stay on (torch stays lit while scanning). */
+    private void applyFlash() {
+        if (imageCapture != null) {
+            imageCapture.setFlashMode(flashMode == AppSettings.FLASH_ON
+                    ? ImageCapture.FLASH_MODE_ON : ImageCapture.FLASH_MODE_OFF);
+        }
+        if (camera != null && camera.getCameraInfo().hasFlashUnit()) {
+            camera.getCameraControl().enableTorch(flashMode == AppSettings.FLASH_STAY_ON);
+        }
+    }
+
+    private void styleFlashOptions() {
+        for (int i = 0; i < 3; i++) {
+            boolean on = i == flashMode;
+            flashOptions[i].setBackgroundResource(on ? R.drawable.bg_seg_on : 0);
+            flashOptions[i].setTextColor(on ? Color.BLACK : Color.WHITE);
+        }
     }
 
     // ------------------------------------------------------------- detection
@@ -283,7 +329,14 @@ public class CameraActivity extends PaperActivity {
         }
         liveQuad = smoothed == null ? null : smoothed.clone();
         overlay.setQuad(smoothed);
-        hint.setText(smoothed == null ? "Looking for the page…" : "Page found — tap the shutter");
+        String err = Scanner.lastError;
+        if (smoothed != null) {
+            hint.setText("Page found — tap the shutter");
+        } else if (err != null) {
+            hint.setText("Detection problem: " + err);
+        } else {
+            hint.setText("Looking for the page…");
+        }
     }
 
     private static float maxDelta(float[] a, float[] b) {
@@ -314,6 +367,7 @@ public class CameraActivity extends PaperActivity {
                         }
                         captured.add(id);
                         updateCount();
+                        showThumb(id);
                         blink();
                         capturing = false;
                         shutter.setEnabled(true);
@@ -336,8 +390,21 @@ public class CameraActivity extends PaperActivity {
 
     private void updateCount() {
         int n = captured.size();
-        countText.setText(n == 0 ? "no pages yet" : n + (n == 1 ? " page" : " pages"));
-        ((TextView) findViewById(R.id.doneButton)).setText(n == 0 ? "Close" : "Done");
+        badge.setVisibility(n == 0 ? View.GONE : View.VISIBLE);
+        badge.setText(String.valueOf(n));
+        doneButton.setText(n == 0 ? "✕" : "✓");
+    }
+
+    /** Shows the most recent photo as a small square, like a normal camera app. */
+    private void showThumb(String id) {
+        final File f = PageStore.orig(this, id);
+        ioExecutor.execute(() -> {
+            Bitmap t = ImageUtil.decodeFile(f, 200);
+            if (t == null) return;
+            ui.post(() -> {
+                if (!isDestroyed()) lastThumb.setImageBitmap(t);
+            });
+        });
     }
 
     private void finishWithResult() {

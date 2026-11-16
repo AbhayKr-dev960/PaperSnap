@@ -96,18 +96,29 @@
             android:textSize="22sp" />
     </LinearLayout>
 
+    <TextView
+        android:id="@+id/reorderHint"
+        style="@style/Faint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingBottom="4dp"
+        android:paddingLeft="4dp"
+        android:paddingTop="2dp"
+        android:text="Hold a page and drag to reorder."
+        android:textSize="13sp"
+        android:textStyle="italic"
+        android:visibility="gone" />
+
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1">
 
-        <ListView
+        <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/pageList"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:divider="@color/rule"
-            android:dividerHeight="1dp"
-            android:scrollbars="none" />
+            android:clipToPadding="false" />
 
         <TextView
             android:id="@+id/emptyText"

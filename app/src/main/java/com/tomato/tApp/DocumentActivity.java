@@ -10,16 +10,21 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.LruCache;
+import android.view.Menu;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
 import android.widget.ImageView;
 import android.widget.ListView;
+import android.widget.PopupMenu;
 import android.widget.TextView;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.core.content.FileProvider;
+import androidx.recyclerview.widget.ItemTouchHelper;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -42,7 +47,7 @@ public class DocumentActivity extends PaperActivity {
     static final String ACTION_SCAN = "scan";
     static final String ACTION_IMPORT = "import";
 
-    private ListView list;
+    private RecyclerView list;
     private TextView status;
     private TextView empty;
     private PageAdapter adapter;
@@ -73,7 +78,9 @@ public class DocumentActivity extends PaperActivity {
         status = findViewById(R.id.statusText);
         empty = findViewById(R.id.emptyText);
         adapter = new PageAdapter();
+        list.setLayoutManager(new LinearLayoutManager(this));
         list.setAdapter(adapter);
+        attachDragToReorder();
 
         if (savedInstanceState != null) pendingId = savedInstanceState.getString("pendingId");
 
@@ -141,8 +148,6 @@ public class DocumentActivity extends PaperActivity {
         });
         findViewById(R.id.shareButton).setOnClickListener(v -> sharePdf());
 
-        list.setOnItemClickListener((parent, view, position, itemId) -> showOptions(position));
-
         reload();
 
         if (savedInstanceState == null) {
@@ -179,6 +184,8 @@ public class DocumentActivity extends PaperActivity {
         findViewById(R.id.clearButton).setVisibility(n == 0 ? View.INVISIBLE : View.VISIBLE);
         findViewById(R.id.saveButton).setEnabled(n > 0);
         findViewById(R.id.shareButton).setEnabled(n > 0);
+
+        findViewById(R.id.reorderHint).setVisibility(n > 1 ? View.VISIBLE : View.GONE);
 
         View card = findViewById(R.id.previewCard);
         card.setVisibility(n == 0 ? View.GONE : View.VISIBLE);
@@ -261,7 +268,7 @@ public class DocumentActivity extends PaperActivity {
                 String msg = ok == 0 ? "" : "Added " + ok + (ok == 1 ? " page." : " pages.");
                 if (bad > 0) msg += (msg.isEmpty() ? "" : " ") + bad + " could not be read.";
                 setStatus(msg);
-                list.post(() -> list.setSelection(adapter.getCount() - 1));
+                list.post(() -> list.scrollToPosition(Math.max(0, adapter.getItemCount() - 1)));
                 if (editAfter && ok > 0) {
                     editQueue.addAll(done);
                     nextEdit();
@@ -286,39 +293,88 @@ public class DocumentActivity extends PaperActivity {
         editLauncher.launch(new Intent(this, EditorActivity.class).putExtra("id", id));
     }
 
-    private void showOptions(int pos) {
+    /** The ⋮ button on each page. */
+    private void showMenu(View anchor, int pos) {
         if (pos < 0 || pos >= ids.size()) return;
         final String id = ids.get(pos);
-        String[] items = {"Preview", "Adjust crop", "Edit — filters & rotate",
-                "Move up", "Move down", "Delete"};
-        new AlertDialog.Builder(this)
-                .setTitle("Page " + (pos + 1))
-                .setItems(items, (d, which) -> {
-                    switch (which) {
-                        case 0:
-                            openPreview(pos);
-                            break;
-                        case 1:
-                            cropLauncher.launch(new Intent(this, CropActivity.class).putExtra("id", id));
-                            break;
-                        case 2:
-                            editLauncher.launch(new Intent(this, EditorActivity.class).putExtra("id", id));
-                            break;
-                        case 3:
-                            PageStore.move(this, pos, pos - 1);
-                            reload();
-                            break;
-                        case 4:
-                            PageStore.move(this, pos, pos + 1);
-                            reload();
-                            break;
-                        case 5:
-                            PageStore.remove(this, id);
-                            reload();
-                            break;
+        PopupMenu menu = new PopupMenu(this, anchor);
+        Menu m = menu.getMenu();
+        m.add(0, 1, 0, "Move up").setEnabled(pos > 0);
+        m.add(0, 2, 1, "Move down").setEnabled(pos < ids.size() - 1);
+        m.add(0, 3, 2, "Adjust crop");
+        m.add(0, 4, 3, "Edit — filters & rotate");
+        m.add(0, 5, 4, "Delete");
+        menu.setOnMenuItemClickListener(item -> {
+            switch (item.getItemId()) {
+                case 1:
+                    PageStore.move(this, pos, pos - 1);
+                    reload();
+                    break;
+                case 2:
+                    PageStore.move(this, pos, pos + 1);
+                    reload();
+                    break;
+                case 3:
+                    cropLauncher.launch(new Intent(this, CropActivity.class).putExtra("id", id));
+                    break;
+                case 4:
+                    editLauncher.launch(new Intent(this, EditorActivity.class).putExtra("id", id));
+                    break;
+                case 5:
+                    PageStore.remove(this, id);
+                    reload();
+                    break;
+            }
+            return true;
+        });
+        menu.show();
+    }
+
+    /** Hold a page, then drag it up or down to reorder. */
+    private void attachDragToReorder() {
+        ItemTouchHelper helper = new ItemTouchHelper(
+                new ItemTouchHelper.SimpleCallback(ItemTouchHelper.UP | ItemTouchHelper.DOWN, 0) {
+                    @Override
+                    public boolean onMove(RecyclerView rv, RecyclerView.ViewHolder from,
+                                          RecyclerView.ViewHolder to) {
+                        int a = from.getBindingAdapterPosition();
+                        int b = to.getBindingAdapterPosition();
+                        if (a < 0 || b < 0 || a >= ids.size() || b >= ids.size()) return false;
+                        String moved = ids.remove(a);
+                        ids.add(b, moved);
+                        adapter.notifyItemMoved(a, b);
+                        return true;
                     }
-                })
-                .show();
+
+                    @Override
+                    public void onSwiped(RecyclerView.ViewHolder vh, int direction) {
+                    }
+
+                    @Override
+                    public void onSelectedChanged(RecyclerView.ViewHolder vh, int state) {
+                        super.onSelectedChanged(vh, state);
+                        if (state == ItemTouchHelper.ACTION_STATE_DRAG && vh != null) {
+                            vh.itemView.setAlpha(0.85f);
+                            vh.itemView.setScaleX(1.03f);
+                            vh.itemView.setScaleY(1.03f);
+                            vh.itemView.setElevation(12f);
+                            vh.itemView.setBackgroundColor(getResources().getColor(R.color.paper));
+                        }
+                    }
+
+                    @Override
+                    public void clearView(RecyclerView rv, RecyclerView.ViewHolder vh) {
+                        super.clearView(rv, vh);
+                        vh.itemView.setAlpha(1f);
+                        vh.itemView.setScaleX(1f);
+                        vh.itemView.setScaleY(1f);
+                        vh.itemView.setElevation(0f);
+                        vh.itemView.setBackgroundResource(R.drawable.bg_rule);
+                        PageStore.setOrder(DocumentActivity.this, ids);
+                        rv.post(() -> adapter.notifyDataSetChanged()); // refresh "Page n" labels
+                    }
+                });
+        helper.attachToRecyclerView(list);
     }
 
     private void confirmClear() {
@@ -428,30 +484,41 @@ public class DocumentActivity extends PaperActivity {
 
     // ---------------------------------------------------------------- adapters
 
-    private class PageAdapter extends BaseAdapter {
+    private class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> {
+
+        class Holder extends RecyclerView.ViewHolder {
+            final ImageView thumb;
+            final TextView title;
+            final View preview;
+            final View more;
+
+            Holder(View v) {
+                super(v);
+                thumb = v.findViewById(R.id.pageThumb);
+                title = v.findViewById(R.id.pageTitle);
+                preview = v.findViewById(R.id.previewButton);
+                more = v.findViewById(R.id.moreButton);
+            }
+        }
+
         @Override
-        public int getCount() {
+        public Holder onCreateViewHolder(ViewGroup parent, int viewType) {
+            return new Holder(getLayoutInflater().inflate(R.layout.item_page, parent, false));
+        }
+
+        @Override
+        public void onBindViewHolder(Holder h, int position) {
+            h.title.setText("Page " + (position + 1));
+            loadThumb(PageStore.current(DocumentActivity.this, ids.get(position)), h.thumb);
+            View.OnClickListener open = v -> openPreview(h.getBindingAdapterPosition());
+            h.itemView.setOnClickListener(open);
+            h.preview.setOnClickListener(open);
+            h.more.setOnClickListener(v -> showMenu(v, h.getBindingAdapterPosition()));
+        }
+
+        @Override
+        public int getItemCount() {
             return ids.size();
-        }
-
-        @Override
-        public Object getItem(int position) {
-            return ids.get(position);
-        }
-
-        @Override
-        public long getItemId(int position) {
-            return position;
-        }
-
-        @Override
-        public View getView(int position, View convertView, ViewGroup parent) {
-            View v = convertView != null ? convertView
-                    : getLayoutInflater().inflate(R.layout.item_page, parent, false);
-            String id = ids.get(position);
-            ((TextView) v.findViewById(R.id.pageTitle)).setText("Page " + (position + 1));
-            loadThumb(PageStore.current(DocumentActivity.this, id), v.findViewById(R.id.pageThumb));
-            return v;
         }
     }
 
