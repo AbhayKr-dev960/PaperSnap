@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:id="@+id/backButton"
+            style="@style/Faint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:padding="12dp"
+            android:text="← back"
+            android:textSize="17sp" />
+
+        <ImageView
+            android:layout_width="72dp"
+            android:layout_height="72dp"
+            android:layout_marginLeft="4dp"
+            android:layout_marginTop="8dp"
+            android:contentDescription="PaperSnap logo"
+            android:src="@drawable/logo" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="cursive"
+            android:paddingLeft="4dp"
+            android:paddingTop="8dp"
+            android:text="PaperSnap"
+            android:textColor="@color/ink"
+            android:textSize="40sp" />
+
+        <TextView
+            android:id="@+id/versionText"
+            style="@style/Faint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingBottom="20dp"
+            android:paddingLeft="4dp" />
+
+        <TextView
+            style="@style/Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_rule"
+            android:paddingBottom="20dp"
+            android:paddingLeft="4dp"
+            android:paddingRight="4dp"
+            android:text="PaperSnap turns paper into PDF.\n\nTake a photo with your phone's own camera, or pick images from your gallery. PaperSnap finds the page, straightens it, and adds it to your document. Add as many pages as you need, put them in order, and save or share everything as a single PDF." />
+
+        <TextView
+            style="@style/Faint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingLeft="4dp"
+            android:paddingTop="20dp"
+            android:text="HOW IT WORKS"
+            android:textSize="12sp" />
+
+        <TextView
+            style="@style/Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_rule"
+            android:paddingBottom="20dp"
+            android:paddingLeft="4dp"
+            android:paddingRight="4dp"
+            android:paddingTop="8dp"
+            android:text="1.  Scan a page or import images.\n2.  Fix the corners if the edges were missed.\n3.  Repeat for more pages.\n4.  Save or share your PDF." />
+
+        <TextView
+            style="@style/Faint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingLeft="4dp"
+            android:paddingTop="20dp"
+            android:text="PRIVATE BY DESIGN"
+            android:textSize="12sp" />
+
+        <TextView
+            style="@style/Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="20dp"
+            android:paddingLeft="4dp"
+            android:paddingRight="4dp"
+            android:paddingTop="8dp"
+            android:text="Everything happens on your phone. No account, no internet access, no ads. Your pages never leave your device unless you share them." />
+
+        <TextView
+            style="@style/Faint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingLeft="4dp"
+            android:text="Page detection uses OpenCV.\nMade with ❤️."
+            android:textStyle="italic" />
+    </LinearLayout>
+</ScrollView>

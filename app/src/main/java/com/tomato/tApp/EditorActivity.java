@@ -1,300 +1,193 @@
-
 package com.tomato.tApp;
 
-import android.app.Activity;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.graphics.Canvas;
-import android.graphics.Color;
-import android.graphics.ColorMatrix;
 import android.graphics.ColorMatrixColorFilter;
-import android.graphics.Paint;
-import android.graphics.pdf.PdfDocument;
-import android.net.Uri;
+import android.graphics.Matrix;
+import android.content.Intent;
 import android.os.Bundle;
-import android.view.View;
-import android.widget.Button;
+import android.os.Handler;
+import android.os.Looper;
 import android.widget.ImageView;
 import android.widget.SeekBar;
 import android.widget.TextView;
-import android.widget.Toast;
 
-import androidx.activity.ComponentActivity;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
-public class EditorActivity extends ComponentActivity {
+/** Optional editor: filters, brightness, contrast, rotate. Only shown if enabled in Settings. */
+public class EditorActivity extends PaperActivity {
 
-    private ImageView imagePreview;
+    private static final String[] MODE_NAMES = {"Original", "Gray", "Black & white", "Enhance"};
+
+    private final ExecutorService worker = Executors.newSingleThreadExecutor();
+    private final Handler ui = new Handler(Looper.getMainLooper());
+
+    private String id;
+    private ImageView preview;
     private TextView modeLabel;
     private SeekBar brightnessBar;
     private SeekBar contrastBar;
+    private Bitmap src;
+    private Bitmap shown;
 
-    private Bitmap originalBitmap;
-    private Bitmap editedBitmap;
-
-    private String selectedMode = "Original";
+    private int mode = ImageUtil.MODE_ORIGINAL;
     private float brightness = 0f;
     private float contrast = 1f;
     private int rotation = 0;
 
-    private ActivityResultLauncher<String> createPdfLauncher;
+    private ActivityResultLauncher<Intent> cropLauncher;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_editor);
 
-        imagePreview = findViewById(R.id.imagePreview);
+        id = getIntent().getStringExtra("id");
+        if (id == null) {
+            finish();
+            return;
+        }
+
+        preview = findViewById(R.id.imagePreview);
         modeLabel = findViewById(R.id.modeLabel);
         brightnessBar = findViewById(R.id.brightnessBar);
         contrastBar = findViewById(R.id.contrastBar);
 
-        createPdfLauncher = registerForActivityResult(
-                new ActivityResultContracts.CreateDocument("application/pdf"),
-                uri -> {
-                    if (uri != null) {
-                        exportPdf(uri);
+        cropLauncher = registerForActivityResult(
+                new ActivityResultContracts.StartActivityForResult(), r -> {
+                    if (r.getResultCode() == RESULT_OK) {
+                        rotation = 0;
+                        loadBase();
                     }
                 });
 
-        String imageUriString = getIntent().getStringExtra("image_uri");
+        loadBase();
 
-        if (imageUriString == null) {
-            Toast.makeText(this, "No scanned page was received",
-                    Toast.LENGTH_LONG).show();
-            finish();
-            return;
-        }
-
-        try {
-            Uri imageUri = Uri.parse(imageUriString);
-            InputStream input = getContentResolver()
-                    .openInputStream(imageUri);
-
-            if (input == null) {
-                throw new Exception("Unable to open scanned image");
+        brightnessBar.setOnSeekBarChangeListener(new SimpleSeek() {
+            @Override
+            void changed(int progress) {
+                brightness = progress - 100;
+                updateFilter();
             }
-
-            originalBitmap = BitmapFactory.decodeStream(input);
-            input.close();
-
-            if (originalBitmap == null) {
-                throw new Exception("Unable to decode scanned image");
+        });
+        contrastBar.setOnSeekBarChangeListener(new SimpleSeek() {
+            @Override
+            void changed(int progress) {
+                contrast = progress / 100f;
+                updateFilter();
             }
-
-            editedBitmap = originalBitmap;
-            renderImage();
-
-        } catch (Exception e) {
-            Toast.makeText(this, "Could not load scanned page",
-                    Toast.LENGTH_LONG).show();
-            finish();
-            return;
-        }
-
-        brightnessBar.setMax(200);
-        brightnessBar.setProgress(100);
-
-        contrastBar.setMax(200);
-        contrastBar.setProgress(100);
-
-        brightnessBar.setOnSeekBarChangeListener(
-                new SeekBar.OnSeekBarChangeListener() {
-                    @Override
-                    public void onProgressChanged(
-                            SeekBar bar, int progress, boolean fromUser) {
-                        brightness = progress - 100;
-                        renderImage();
-                    }
-
-                    @Override
-                    public void onStartTrackingTouch(SeekBar bar) {
-                    }
-
-                    @Override
-                    public void onStopTrackingTouch(SeekBar bar) {
-                    }
-                });
-
-        contrastBar.setOnSeekBarChangeListener(
-                new SeekBar.OnSeekBarChangeListener() {
-                    @Override
-                    public void onProgressChanged(
-                            SeekBar bar, int progress, boolean fromUser) {
-                        contrast = progress / 100f;
-                        renderImage();
-                    }
-
-                    @Override
-                    public void onStartTrackingTouch(SeekBar bar) {
-                    }
-
-                    @Override
-                    public void onStopTrackingTouch(SeekBar bar) {
-                    }
-                });
-
-        findViewById(R.id.originalButton).setOnClickListener(v -> {
-            selectedMode = "Original";
-            renderImage();
         });
 
-        findViewById(R.id.grayButton).setOnClickListener(v -> {
-            selectedMode = "Grayscale";
-            renderImage();
-        });
-
-        findViewById(R.id.bwButton).setOnClickListener(v -> {
-            selectedMode = "B&W";
-            renderImage();
-        });
-
-        findViewById(R.id.enhanceButton).setOnClickListener(v -> {
-            selectedMode = "Enhanced";
-            renderImage();
-        });
-
+        findViewById(R.id.backButton).setOnClickListener(v -> finish());
+        findViewById(R.id.originalButton).setOnClickListener(v -> setMode(ImageUtil.MODE_ORIGINAL));
+        findViewById(R.id.grayButton).setOnClickListener(v -> setMode(ImageUtil.MODE_GRAY));
+        findViewById(R.id.bwButton).setOnClickListener(v -> setMode(ImageUtil.MODE_BW));
+        findViewById(R.id.enhanceButton).setOnClickListener(v -> setMode(ImageUtil.MODE_ENHANCE));
         findViewById(R.id.rotateButton).setOnClickListener(v -> {
             rotation = (rotation + 90) % 360;
-            renderImage();
+            rebuildPreview();
         });
-
-        findViewById(R.id.resetButton).setOnClickListener(v -> resetEditor());
-
-        findViewById(R.id.exportButton).setOnClickListener(v -> createPdfLauncher.launch("PaperSnap-Edited.pdf"));
-    }
-
-    private void renderImage() {
-        if (originalBitmap == null)
-            return;
-
-        ColorMatrix matrix = new ColorMatrix();
-
-        if (selectedMode.equals("Grayscale")) {
-            matrix.setSaturation(0f);
-        } else if (selectedMode.equals("B&W")) {
-            matrix.setSaturation(0f);
-            matrix.set(new float[] {
-                    1.7f, 0, 0, 0, -90,
-                    1.7f, 0, 0, 0, -90,
-                    1.7f, 0, 0, 0, -90,
-                    0, 0, 0, 1, 0
-            });
-        } else if (selectedMode.equals("Enhanced")) {
-            matrix.setSaturation(0f);
-            matrix.set(new float[] {
-                    1.35f, 0, 0, 0, -25,
-                    0, 1.35f, 0, 0, -25,
-                    0, 0, 1.35f, 0, -25,
-                    0, 0, 0, 1, 0
-            });
-        }
-
-        float scale = contrast;
-        float translate = (1f - scale) * 128f + brightness;
-
-        ColorMatrix adjustments = new ColorMatrix(new float[] {
-                scale, 0, 0, 0, translate,
-                0, scale, 0, 0, translate,
-                0, 0, scale, 0, translate,
-                0, 0, 0, 1, 0
+        findViewById(R.id.cropButton).setOnClickListener(v ->
+                cropLauncher.launch(new Intent(this, CropActivity.class).putExtra("id", id)));
+        findViewById(R.id.resetButton).setOnClickListener(v -> {
+            mode = ImageUtil.MODE_ORIGINAL;
+            brightness = 0f;
+            contrast = 1f;
+            rotation = 0;
+            brightnessBar.setProgress(100);
+            contrastBar.setProgress(100);
+            rebuildPreview();
         });
-
-        matrix.postConcat(adjustments);
-
-        Bitmap output = Bitmap.createBitmap(
-                originalBitmap.getWidth(),
-                originalBitmap.getHeight(),
-                Bitmap.Config.ARGB_8888);
-
-        Canvas canvas = new Canvas(output);
-        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        paint.setColorFilter(new ColorMatrixColorFilter(matrix));
-        canvas.drawBitmap(originalBitmap, 0, 0, paint);
-
-        if (rotation != 0) {
-            android.graphics.Matrix rotateMatrix = new android.graphics.Matrix();
-            rotateMatrix.postRotate(rotation);
-
-            Bitmap rotated = Bitmap.createBitmap(
-                    output, 0, 0, output.getWidth(), output.getHeight(),
-                    rotateMatrix, true);
-
-            output.recycle();
-            output = rotated;
-        }
-
-        if (editedBitmap != null && editedBitmap != originalBitmap) {
-            editedBitmap.recycle();
-        }
-
-        editedBitmap = output;
-        imagePreview.setImageBitmap(editedBitmap);
-        modeLabel.setText(selectedMode);
+        findViewById(R.id.saveButton).setOnClickListener(v -> save());
     }
 
-    private void resetEditor() {
-        selectedMode = "Original";
-        brightness = 0f;
-        contrast = 1f;
-        rotation = 0;
-
-        brightnessBar.setProgress(100);
-        contrastBar.setProgress(100);
-        renderImage();
-    }
-
-    private void exportPdf(Uri destination) {
-        if (editedBitmap == null)
+    private void loadBase() {
+        Bitmap b = ImageUtil.decodeFile(PageStore.base(this, id), 1600);
+        if (b == null) {
+            toast("Could not load this page.");
+            finish();
             return;
+        }
+        src = b;
+        rebuildPreview();
+    }
 
-        PdfDocument document = new PdfDocument();
+    private void rebuildPreview() {
+        if (src == null) return;
+        if (rotation % 360 == 0) {
+            shown = src;
+        } else {
+            Matrix m = new Matrix();
+            m.postRotate(rotation);
+            shown = Bitmap.createBitmap(src, 0, 0, src.getWidth(), src.getHeight(), m, true);
+        }
+        preview.setImageBitmap(shown);
+        updateFilter();
+    }
 
-        try {
-            PdfDocument.PageInfo pageInfo = new PdfDocument.PageInfo.Builder(
-                    editedBitmap.getWidth(),
-                    editedBitmap.getHeight(),
-                    1).create();
+    private void setMode(int m) {
+        mode = m;
+        updateFilter();
+    }
 
-            PdfDocument.Page page = document.startPage(pageInfo);
-            page.getCanvas().drawColor(Color.WHITE);
-            page.getCanvas().drawBitmap(editedBitmap, 0, 0, null);
-            document.finishPage(page);
+    private void updateFilter() {
+        preview.setColorFilter(new ColorMatrixColorFilter(
+                ImageUtil.matrix(mode, brightness, contrast)));
+        modeLabel.setText(MODE_NAMES[mode]);
+    }
 
-            OutputStream output = getContentResolver().openOutputStream(destination);
-
-            if (output == null) {
-                throw new Exception("Could not open destination");
+    private void save() {
+        final boolean untouched = mode == ImageUtil.MODE_ORIGINAL
+                && brightness == 0f && contrast == 1f && rotation % 360 == 0;
+        findViewById(R.id.saveButton).setEnabled(false);
+        worker.execute(() -> {
+            try {
+                if (untouched) {
+                    PageStore.fin(this, id).delete();
+                } else {
+                    Bitmap full = ImageUtil.decodeFile(PageStore.base(this, id), 4096);
+                    if (full == null) throw new Exception("Could not read page");
+                    Bitmap out = ImageUtil.applyAdjust(full, mode, brightness, contrast, rotation);
+                    ImageUtil.saveJpeg(out, PageStore.fin(this, id), AppSettings.jpegQuality(this));
+                    out.recycle();
+                    full.recycle();
+                }
+                ui.post(() -> {
+                    setResult(RESULT_OK);
+                    finish();
+                });
+            } catch (Throwable t) {
+                ui.post(() -> {
+                    findViewById(R.id.saveButton).setEnabled(true);
+                    toast("Could not save: " + t.getMessage());
+                });
             }
-
-            document.writeTo(output);
-            output.close();
-
-            Toast.makeText(this, "Edited PDF saved",
-                    Toast.LENGTH_LONG).show();
-
-        } catch (Exception e) {
-            Toast.makeText(this, "PDF export failed: " + e.getMessage(),
-                    Toast.LENGTH_LONG).show();
-        } finally {
-            document.close();
-        }
+        });
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        worker.shutdown();
+    }
 
-        if (editedBitmap != null && editedBitmap != originalBitmap) {
-            editedBitmap.recycle();
+    private abstract static class SimpleSeek implements SeekBar.OnSeekBarChangeListener {
+        abstract void changed(int progress);
+
+        @Override
+        public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+            changed(progress);
         }
 
-        if (originalBitmap != null && !originalBitmap.isRecycled()) {
-            originalBitmap.recycle();
+        @Override
+        public void onStartTrackingTouch(SeekBar bar) {
+        }
+
+        @Override
+        public void onStopTrackingTouch(SeekBar bar) {
         }
     }
 }

@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000"
+    android:keepScreenOn="true"
+    android:orientation="vertical">
+
+    <!-- Flash: Off / On / Stay on -->
+    <LinearLayout
+        android:id="@+id/flashRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical|right"
+        android:orientation="horizontal"
+        android:padding="12dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="serif"
+            android:paddingRight="10dp"
+            android:text="Flash"
+            android:textColor="#CCFFFFFF"
+            android:textSize="14sp" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_segment"
+            android:orientation="horizontal"
+            android:padding="3dp">
+
+            <TextView
+                android:id="@+id/flashOff"
+                style="@style/FlashOption"
+                android:text="Off" />
+
+            <TextView
+                android:id="@+id/flashOn"
+                style="@style/FlashOption"
+                android:text="On" />
+
+            <TextView
+                android:id="@+id/flashStay"
+                style="@style/FlashOption"
+                android:text="Stay on" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <androidx.camera.view.PreviewView
+            android:id="@+id/previewView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <com.tomato.tApp.ScanOverlayView
+            android:id="@+id/overlay"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <TextView
+            android:id="@+id/hintText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|center_horizontal"
+            android:layout_marginBottom="14dp"
+            android:background="@drawable/bg_hint_pill"
+            android:fontFamily="serif"
+            android:paddingBottom="7dp"
+            android:paddingLeft="14dp"
+            android:paddingRight="14dp"
+            android:paddingTop="7dp"
+            android:text="Looking for the page…"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="italic" />
+
+        <View
+            android:id="@+id/shutterFlash"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:alpha="0"
+            android:background="#FFFFFF" />
+    </FrameLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingBottom="16dp"
+        android:paddingTop="16dp">
+
+        <!-- Last photo, as a small square -->
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="64dp"
+            android:layout_weight="1">
+
+            <FrameLayout
+                android:id="@+id/thumbFrame"
+                android:layout_width="58dp"
+                android:layout_height="58dp"
+                android:layout_gravity="center_vertical"
+                android:layout_marginLeft="20dp"
+                android:background="@drawable/bg_thumb_dark"
+                android:clickable="true"
+                android:contentDescription="Last photo"
+                android:focusable="true"
+                android:padding="2dp">
+
+                <ImageView
+                    android:id="@+id/lastThumb"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:contentDescription="Last photo"
+                    android:scaleType="centerCrop" />
+            </FrameLayout>
+
+            <TextView
+                android:id="@+id/badge"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_marginLeft="62dp"
+                android:layout_marginTop="2dp"
+                android:background="@drawable/bg_badge"
+                android:gravity="center"
+                android:text="0"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:visibility="gone" />
+        </FrameLayout>
+
+        <View
+            android:id="@+id/shutterButton"
+            android:layout_width="74dp"
+            android:layout_height="74dp"
+            android:background="@drawable/bg_shutter"
+            android:clickable="true"
+            android:contentDescription="Take photo"
+            android:focusable="true" />
+
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="64dp"
+            android:layout_weight="1">
+
+            <TextView
+                android:id="@+id/doneButton"
+                android:layout_width="54dp"
+                android:layout_height="54dp"
+                android:layout_gravity="center_vertical|right"
+                android:layout_marginRight="20dp"
+                android:background="@drawable/bg_circle_btn"
+                android:clickable="true"
+                android:contentDescription="Done"
+                android:focusable="true"
+                android:gravity="center"
+                android:text="✕"
+                android:textColor="#FFFFFF"
+                android:textSize="22sp" />
+        </FrameLayout>
+    </LinearLayout>
+</LinearLayout>
