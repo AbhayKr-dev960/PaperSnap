@@ -13,7 +13,7 @@ public class AboutActivity extends PaperActivity {
 
         findViewById(R.id.backButton).setOnClickListener(v -> finish());
 
-        String version = "1.0";
+        String version = "0.1";
         try {
             version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
         } catch (PackageManager.NameNotFoundException ignored) {
